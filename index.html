@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetCalendar</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #eef1f5;
+      color: #20242a;
+    }
+
+    .app {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      height: 62px;
+      background: white;
+      border-bottom: 1px solid #cbd1d8;
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      gap: 8px;
+    }
+
+    button {
+      border: 1px solid #aab2bd;
+      background: #fff;
+      padding: 8px 14px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    button:hover { background: #edf4ff; }
+
+    .primary {
+      background: #2675d8;
+      color: white;
+      border-color: #2675d8;
+    }
+
+    .danger {
+      background: #b73535;
+      color: white;
+      border-color: #b73535;
+    }
+
+    #weekTitle {
+      font-weight: bold;
+      margin-left: 10px;
+      font-size: 16px;
+    }
+
+    .calendar-wrapper {
+      flex: 1;
+      overflow: auto;
+      background: white;
+    }
+
+    .calendar {
+      display: grid;
+      grid-template-columns: 75px repeat(7, minmax(145px, 1fr));
+      min-width: 1100px;
+    }
+
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #e5ebf2;
+      border-right: 1px solid #aeb7c2;
+      border-bottom: 1px solid #9fa9b5;
+      text-align: center;
+      padding: 9px 3px;
+      font-weight: bold;
+    }
+
+    .weekend-header { background: #dce8f7; }
+
+    .time {
+      background: #f1f3f6;
+      border-right: 1px solid #bbc2ca;
+      border-bottom: 1px solid #d5d9de;
+      text-align: center;
+      padding-top: 7px;
+      font-size: 12px;
+      height: 42px;
+    }
+
+    .slot {
+      height: 42px;
+      border-right: 1px solid #d0d5db;
+      border-bottom: 1px solid #d9dde2;
+      position: relative;
+      cursor: pointer;
+      overflow: visible;
+    }
+
+    .slot:hover { background: #edf5ff; }
+    .weekend { background: #f4f8fd; }
+    .today { background: #fffce7; }
+
+    .event {
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      top: 2px;
+      min-height: 36px;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 12px;
+      color: white;
+      z-index: 4;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+
+    .event-title { font-weight: bold; }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.42);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      width: 620px;
+      max-width: 94vw;
+      max-height: 94vh;
+      overflow-y: auto;
+      background: #f5f5f5;
+      border-radius: 7px;
+      padding: 20px;
+      box-shadow: 0 10px 40px rgba(0,0,0,.35);
+    }
+
+    .modal-content h2 { margin-top: 0; }
+
+    .field { margin-bottom: 11px; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+      font-weight: bold;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #aeb5bd;
+      border-radius: 4px;
+      font: inherit;
+      background: white;
+    }
+
+    textarea {
+      height: 120px;
+      resize: vertical;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .status {
+      margin-left: auto;
+      font-size: 12px;
+      color: #59616b;
+    }
+
+    @media (max-width: 700px) {
+      .row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="app">
+
+  <div class="topbar">
+    <button onclick="changeWeek(-1)">◀</button>
+    <button onclick="goToday()">Dzisiaj</button>
+    <button onclick="changeWeek(1)">▶</button>
+
+    <span id="weekTitle"></span>
+
+    <span class="status" id="connectionStatus">
+      Łączenie...
+    </span>
+  </div>
+
+  <div class="calendar-wrapper">
+    <div id="calendar" class="calendar"></div>
+  </div>
+
+</div>
+
+<div id="eventModal" class="modal">
+  <div class="modal-content">
+
+    <h2>Termin</h2>
+
+    <input type="hidden" id="eventId">
+
+    <div class="field">
+      <label>Temat</label>
+      <input id="title" placeholder="Wpisz temat">
+    </div>
+
+    <div class="field">
+      <label>Lokalizacja</label>
+      <input id="location" placeholder="Opcjonalnie">
+    </div>
+
+    <div class="row">
+
+      <div class="field">
+        <label>Od</label>
+        <input id="startTime" type="datetime-local">
+      </div>
+
+      <div class="field">
+        <label>Do</label>
+        <input id="endTime" type="datetime-local">
+      </div>
+
+    </div>
+
+    <div class="row">
+
+      <div class="field">
+        <label>Status</label>
+        <select id="status">
+          <option>Zajęty</option>
+          <option>Wolny</option>
+          <option>Wstępnie</option>
+          <option>Poza biurem</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Kategoria</label>
+        <input id="category" placeholder="np. Serwis">
+      </div>
+
+    </div>
+
+    <div class="field">
+      <label>Kolor</label>
+      <input id="color" type="color" value="#2675d8">
+    </div>
+
+    <div class="field">
+      <label>Opis / notatki</label>
+      <textarea id="description"></textarea>
+    </div>
+
+    <div class="buttons">
+      <button onclick="closeModal()">Anuluj</button>
+      <button class="primary" onclick="saveEvent()">Zapisz</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+
+  /* ==================================================
+     TUTAJ WKLEJ DANE Z SUPABASE
+     ================================================== */
+
+  const SUPABASE_URL =
+    "https://tionlueszrmpxclgukuw.supabase.co/rest/v1/";
+
+  const SUPABASE_KEY =
+    "sb_publishable_2HE4MNZORHHI2szIYQnPdA_GUB36GNl";
+
+  /* ================================================== */
+
+  const db = supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+  );
+
+  let currentDate = new Date();
+  let events = [];
+
+  const deviceId = getDeviceId();
+
+  function getDeviceId() {
+
+    let id = localStorage.getItem("netcalendar_device");
+
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("netcalendar_device", id);
+    }
+
+    return id;
+  }
+
+  function mondayOf(date) {
+
+    const d = new Date(date);
+    const day = d.getDay();
+
+    const difference =
+      d.getDate() - day + (day === 0 ? -6 : 1);
+
+    d.setDate(difference);
+    d.setHours(0,0,0,0);
+
+    return d;
+  }
+
+  function formatDate(date) {
+    return date.toLocaleDateString("pl-PL");
+  }
+
+  function localInput(date) {
+
+    const offset =
+      date.getTimezoneOffset() * 60000;
+
+    return new Date(
+      date.getTime() - offset
+    ).toISOString().slice(0,16);
+  }
+
+  async function loadEvents() {
+
+    const start = mondayOf(currentDate);
+
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+
+    const { data, error } = await db
+      .from("calendar_events")
+      .select("*")
+      .gte("start_time", start.toISOString())
+      .lt("start_time", end.toISOString());
+
+    if (error) {
+      console.error(error);
+      document.getElementById("connectionStatus")
+        .textContent = "Błąd połączenia";
+      return;
+    }
+
+    events = data || [];
+
+    document.getElementById("connectionStatus")
+      .textContent = "Online";
+
+    renderCalendar();
+  }
+
+  function renderCalendar() {
+
+    const calendar =
+      document.getElementById("calendar");
+
+    calendar.innerHTML = "";
+
+    const monday = mondayOf(currentDate);
+
+    const days = [
+      "Poniedziałek",
+      "Wtorek",
+      "Środa",
+      "Czwartek",
+      "Piątek",
+      "Sobota",
+      "Niedziela"
+    ];
+
+    const corner = document.createElement("div");
+    corner.className = "header";
+    corner.textContent = "Godzina";
+    calendar.appendChild(corner);
+
+    for (let i = 0; i < 7; i++) {
+
+      const date = new Date(monday);
+      date.setDate(date.getDate() + i);
+
+      const header = document.createElement("div");
+
+      header.className =
+        "header" + (i >= 5 ? " weekend-header" : "");
+
+      header.innerHTML =
+        days[i] + "<br>" + formatDate(date);
+
+      calendar.appendChild(header);
+    }
+
+    const endWeek = new Date(monday);
+    endWeek.setDate(endWeek.getDate() + 6);
+
+    document.getElementById("weekTitle").textContent =
+      formatDate(monday) +
+      " - " +
+      formatDate(endWeek);
+
+    for (let hour = 6; hour <= 21; hour++) {
+
+      for (let half = 0; half < 2; half++) {
+
+        const minute = half * 30;
+
+        const time = document.createElement("div");
+        time.className = "time";
+
+        time.textContent =
+          String(hour).padStart(2,"0") +
+          ":" +
+          String(minute).padStart(2,"0");
+
+        calendar.appendChild(time);
+
+        for (let day = 0; day < 7; day++) {
+
+          const slotDate = new Date(monday);
+
+          slotDate.setDate(
+            slotDate.getDate() + day
+          );
+
+          slotDate.setHours(
+            hour,
+            minute,
+            0,
+            0
+          );
+
+          const slot =
+            document.createElement("div");
+
+          slot.className =
+            "slot" +
+            (day >= 5 ? " weekend" : "");
+
+          if (
+            slotDate.toDateString() ===
+            new Date().toDateString()
+          ) {
+            slot.classList.add("today");
+          }
+
+          slot.onclick = () =>
+            openNewEvent(slotDate);
+
+          renderEventsForSlot(
+            slot,
+            slotDate
+          );
+
+          calendar.appendChild(slot);
+        }
+      }
+    }
+  }
+
+  function renderEventsForSlot(slot, slotDate) {
+
+    events.forEach(event => {
+
+      const start =
+        new Date(event.start_time);
+
+      if (
+        start.getFullYear() === slotDate.getFullYear() &&
+        start.getMonth() === slotDate.getMonth() &&
+        start.getDate() === slotDate.getDate() &&
+        start.getHours() === slotDate.getHours() &&
+        start.getMinutes() === slotDate.getMinutes()
+      ) {
+
+        const el =
+          document.createElement("div");
+
+        el.className = "event";
+
+        el.style.background =
+          event.color || "#2675d8";
+
+        el.innerHTML =
+          '<div class="event-title">' +
+          escapeHtml(event.title) +
+          "</div>" +
+          start.toLocaleTimeString(
+            "pl-PL",
+            {
+              hour: "2-digit",
+              minute: "2-digit"
+            }
+          );
+
+        el.onclick = e => {
+          e.stopPropagation();
+          openExistingEvent(event);
+        };
+
+        slot.appendChild(el);
+      }
+    });
+  }
+
+  function escapeHtml(text) {
+
+    const div =
+      document.createElement("div");
+
+    div.textContent = text || "";
+
+    return div.innerHTML;
+  }
+
+  function openNewEvent(date) {
+
+    document.getElementById("eventId").value = "";
+    document.getElementById("title").value = "";
+    document.getElementById("location").value = "";
+    document.getElementById("description").value = "";
+    document.getElementById("category").value = "";
+    document.getElementById("status").value = "Zajęty";
+    document.getElementById("color").value = "#2675d8";
+
+    const end = new Date(date);
+    end.setMinutes(end.getMinutes() + 30);
+
+    document.getElementById("startTime").value =
+      localInput(date);
+
+    document.getElementById("endTime").value =
+      localInput(end);
+
+    document.getElementById("eventModal").style.display =
+      "flex";
+  }
+
+  function openExistingEvent(event) {
+
+    document.getElementById("eventId").value =
+      event.id;
+
+    document.getElementById("title").value =
+      event.title || "";
+
+    document.getElementById("location").value =
+      event.location || "";
+
+    document.getElementById("description").value =
+      event.description || "";
+
+    document.getElementById("category").value =
+      event.category || "";
+
+    document.getElementById("status").value =
+      event.status || "Zajęty";
+
+    document.getElementById("color").value =
+      event.color || "#2675d8";
+
+    document.getElementById("startTime").value =
+      localInput(new Date(event.start_time));
+
+    document.getElementById("endTime").value =
+      localInput(new Date(event.end_time));
+
+    document.getElementById("eventModal").style.display =
+      "flex";
+  }
+
+  function closeModal() {
+    document.getElementById("eventModal").style.display =
+      "none";
+  }
+
+  async function saveEvent() {
+
+    const title =
+      document.getElementById("title").value.trim();
+
+    if (!title) {
+      alert("Wpisz temat.");
+      return;
+    }
+
+    const eventId =
+      document.getElementById("eventId").value;
+
+    const payload = {
+
+      title: title,
+
+      location:
+        document.getElementById("location").value,
+
+      description:
+        document.getElementById("description").value,
+
+      start_time:
+        new Date(
+          document.getElementById("startTime").value
+        ).toISOString(),
+
+      end_time:
+        new Date(
+          document.getElementById("endTime").value
+        ).toISOString(),
+
+      status:
+        document.getElementById("status").value,
+
+      category:
+        document.getElementById("category").value,
+
+      color:
+        document.getElementById("color").value,
+
+      author_id: deviceId,
+
+      author_name: "Komputer"
+    };
+
+    let result;
+
+    if (eventId) {
+
+      alert(
+        "Edycję istniejących wpisów uruchomimy w następnym etapie."
+      );
+
+      return;
+
+    } else {
+
+      result = await db
+        .from("calendar_events")
+        .insert(payload);
+    }
+
+    if (result.error) {
+
+      console.error(result.error);
+
+      alert(
+        "Nie udało się zapisać terminu: " +
+        result.error.message
+      );
+
+      return;
+    }
+
+    closeModal();
+    await loadEvents();
+  }
+
+  function changeWeek(number) {
+
+    currentDate.setDate(
+      currentDate.getDate() + number * 7
+    );
+
+    loadEvents();
+  }
+
+  function goToday() {
+
+    currentDate = new Date();
+    loadEvents();
+  }
+
+  db.channel("calendar-live")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "calendar_events"
+      },
+      () => loadEvents()
+    )
+    .subscribe();
+
+  loadEvents();
+
+</script>
+
+</body>
+</html>
