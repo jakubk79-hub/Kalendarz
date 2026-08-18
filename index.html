@@ -295,16 +295,16 @@
      ================================================== */
 
   const SUPABASE_URL =
-    "https://tionlueszrmpxclgukuw.supabase.co";
+    https://tionlueszrmpxclgukuw.supabase.co;
 
   const SUPABASE_KEY =
-    "sb_publishable_2HE4MNZORHHI2szIYQnPdA_GUB36GNI";
+    sb_publishable_2HE4MNZORHHI2szIYQnPdA_GUB36GNI;
 
   /* ================================================== */
 
   const db = supabase.createClient(
-    "TWÓJ_PROJECT_URL",
-    "TWÓJ_PUBLISHABLE_KEY"
+    SUPABASE_URL,
+    SUPABASE_KEY
   );
 
   let currentDate = new Date();
